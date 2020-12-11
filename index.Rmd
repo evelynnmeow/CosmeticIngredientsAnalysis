@@ -1,0 +1,378 @@
+---
+title: "CosmeticHazardrousIngredients"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+    
+---
+
+```{r setup, include=FALSE, echo =FALSE}
+# include useful packages
+library(flexdashboard)
+library(tidyverse)
+```
+
+```{r, echo =FALSE}
+# read in the dataset
+sephora = read.csv("data/products.csv", header = T) 
+chemical = read.csv("data/cscpopendata.csv", header = T)
+ingredients = read.csv("data/ingredients.csv", header = T)
+
+```
+
+```{r, echo = FALSE}
+# select useful features 
+short = ingredients %>% select(code, product_name, main_category_en, quantity, 
+                               brands, manufacturing_places, countries_en, ingredients_text, 
+                               additives_n, additives_en, 
+                               states_en)
+# filter out NAs
+ingredient = short %>% filter(product_name != "") %>% filter(main_category_en != "") %>% filter(ingredients_text != "") 
+
+```
+
+```{r, echo = FALSE}
+# create my own color theme
+library(ggplot2)
+
+theme_set(theme_minimal())
+
+custom_colors <- c(
+  `pink`      = "#ffd4df",
+  `red`        = "#ff4101",
+  `purple`     = "#8A2BE2",
+  `green`      = "#dfffd4",
+  `blue`       = "#d4f5ff",
+  `yellow`     = "#fff4d4",
+  `light grey` = "#cccccc",
+  `dark grey`  = "#8c8c8c")
+
+custom_cols <- function(...) {
+  cols <- c(...)
+
+  if (is.null(cols))
+    return (custom_colors)
+
+  custom_colors[cols]
+}
+
+custom_palettes <- list(
+  `main`  = custom_cols("pink", "blue", "green"),
+
+  `cool`  = custom_cols("blue", "green"),
+
+  `warm`   = custom_cols("pink", "red"),
+
+  `mixed` = custom_cols("blue", "green", "purple", "light grey", "red"),
+
+  `grey`  = custom_cols("light grey", "dark grey")
+)
+
+custom_pal <- function(palette = "main", reverse = FALSE, ...) {
+  pal <- custom_palettes[[palette]]
+
+  if (reverse) pal <- rev(pal)
+
+  colorRampPalette(pal, ...)
+}
+
+scale_color_custom <- function(palette = "main", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- custom_pal(palette = palette, reverse = reverse)
+
+  if (discrete) {
+    discrete_scale("colour", paste0("custom_", palette), palette = pal, ...)
+  } else {
+    scale_color_gradientn(colours = pal(256), ...)
+  }
+}
+
+scale_fill_custom <- function(palette = "main", discrete = TRUE, reverse = FALSE, ...) {
+  pal <- custom_pal(palette = palette, reverse = reverse)
+
+  if (discrete) {
+    discrete_scale("fill", paste0("custom_", palette), palette = pal, ...)
+  } else {
+    scale_fill_gradientn(colours = pal(256), ...)
+  }
+}
+
+```
+
+```{r, echo = FALSE}
+# get the number of cases reported in primary category
+primary_cat = chemical %>% group_by(PrimaryCategory) %>% count
+# get the number of cases reported in makeup
+makeup = chemical %>% filter(PrimaryCategoryId == 44)
+sub_cat = makeup %>% group_by(SubCategory) %>% count
+# get the number of cases reported in lip color
+lips = makeup %>% filter(SubCategoryId == 53)
+lips_cat = lips %>% group_by(ChemicalName) %>% count %>% arrange(desc(n)) %>% head(4) 
+```
+
+```{r, echo = FALSE}
+# sentiment analysis
+# import library
+library(stringr)
+library(tidytext)
+#head(sephora)
+# lip products
+lip = sephora %>% filter(product_type == "\nLipstick\n" |  product_type == "\nLipgloss\n") %>% select(ID, description)
+
+# sentiments dataset
+sents = get_sentiments("afinn")
+
+# unnest and join
+t1 = lip %>% mutate(des = as.character(description)) %>% unnest_tokens(word, des)
+des_sent = left_join(t1, sents, by = "word")
+
+df1 = des_sent %>% filter(!is.na(value)) %>% group_by(value) %>% count
+```
+
+
+```{r, echo = FALSE}
+# titanium dioxide in all categories
+tio2 = chemical %>% filter(ChemicalName == "Titanium dioxide")
+# head(tio2)
+ti_cat = tio2 %>% group_by(PrimaryCategory) %>% count
+ti_date = tio2 %>% group_by(InitialDateReported) %>% count
+
+# manipulate the data
+# change the data from char to datetime object
+library(lubridate) 
+ti_date1 = ti_date %>% mutate(date = as.Date(InitialDateReported, "%m/%d/%Y"))
+
+```
+
+```{r, echo = FALSE}
+# get all retinol products
+retinol = chemical %>% filter(ChemicalName == "Retinol")
+# get the date
+re_date = retinol %>% group_by(InitialDateReported) %>% count
+re_date1 = re_date %>% mutate(date = as.Date(InitialDateReported, "%m/%d/%Y"))
+
+
+```
+
+```{r, echo = FALSE}
+# read in the world map
+world_map <- map_data("world")
+# read in the active ingredient data
+additive = read.csv("data/additive.csv", header = T)
+
+```
+
+Project Overview
+=====================================  
+Column {data-width=800}
+-----------------------------------------------------------------------
+### About this Project
+- This project is focusing on active ingredients and (potential) hazard ingredients in cosmetic products.   
+- An active ingredient is proven to change the skin in some way and is regulated by the FDA.
+- A (potential) hazardous ingredient is known or suspected to cause cancer, birth defects, or other developmental or reproductive harm.
+
+-----------------------------------------------------------------------
+
+### Data Overview
+
+- There are four datasets used in this project.
+- The first dataset consists the information of all products containing (potential) hazardous ingredients that is reported to the California Department of Public Health (CDPH), including label names of cosmetic/personal care products, company/manufacturer names, product brand names, product categories, Chemical Abstracts Service registry numbers (CAS#) of the reported chemical ingredients, names of reported chemical ingredients, the number of reported chemicals for each product, and dates of reporting, product discontinuation or reformulation if applicable.
+- The second dataset consists of data from Open Beauty Facts. Open Beauty Facts contains all information of cosmetic products with ingredients, allergens, and all other information that could be found on product labels. 
+- The third dataset contains information on over 10, 000 cosmetic products scraped from the web, including brand names, product names, description, etc. 
+- The fourth dataset consists of the longitude and latitude of each country.
+
+-----------------------------------------------------------------------
+
+
+Hazardous Ingredients
+=====================================  
+Column {data-width=800}
+-----------------------------------------------------------------------
+
+##### (Potential) Hazardous ingredients are widely used in cosmetic and skincare products. However, the amount of ingredients used are regulated by the FDA in order to prevent potential harmful effect to the human body. 
+##### Let us look at which Primary Category reports the most number of (potential) hazardous ingredients to the CDPH.
+
+-----------------------------------------------------------------------
+
+### Primary Category
+
+##### As we can see, the makeup products sub-category reports the largest number of cases of (potential) hazardous ingredients.
+##### But which type of makeup products reports the highest number of cases?
+
+
+```{r}
+# plot of primary category
+p1 = ggplot(data = primary_cat, aes(x = reorder(PrimaryCategory, n), y = n, fill = PrimaryCategory)) + geom_bar(stat= "identity") + geom_text(aes(label=n), vjust=-0.3, size=2.5) +  ylim(0, 100000) + theme(axis.text.x = element_text(angle = 45, hjust = 1))+labs(title="Bar Plot of Primary Category",
+        x ="Primary Category", y = "Number of Cases Reported") +  scale_fill_custom(palette = "mixed", guide = "none") 
+p1
+```
+
+-----------------------------------------------------------------------
+
+### Sub-category of Makeup Products
+##### The lip color products reports the highest number of cases. 
+
+```{r}
+# plot of sub category
+p2 = ggplot(data = sub_cat, aes(x = reorder(SubCategory, n), y = n, fill = SubCategory)) + geom_bar(stat= "identity") + geom_text(aes(label=n), vjust=-0.3, size=2.5) +  ylim(0, 20000) + theme(axis.text.x = element_text(angle = 45, hjust = 1))+labs(title="Bar Plot of Sub Category in MakeUp Products",
+        x ="Sub Category", y = "Number of Cases Reported") +  scale_fill_custom(palette = "mixed", guide = "none") 
+p2
+
+```
+
+##### For those us average consumers who are not familiar with cosmetic ingredients, will we get notified from the description of the product?
+
+-----------------------------------------------------------------------
+
+### Sentiment Analysis of Lip Color Products Descriptions
+
+##### We classified the sentiment of description, in terms of positivity and negativity, into numerical categories. 
+##### 0 stands for neural, positive numbers indicate a positive sentiment and vice versa. 
+##### It turns out that companies may not used a relatively negative tone in description of lip color products.
+
+```{r}
+# sentiment analysis of description
+p1 = ggplot(data = df1, aes(x = value, y = n, fill = as.factor(value)))+ geom_bar(stat= "identity") + geom_text(aes(label=n), vjust=-0.3, size=3.5)  + theme(axis.text.x = element_text(angle = 45, hjust = 1))+labs(title="Sentiment of Lip Product Description",
+        x ="Number of Products", y = "Sentiment Score") +  scale_fill_custom(palette = "cool", guide = "none") + coord_flip()
+p1
+```
+
+
+
+-----------------------------------------------------------------------
+
+Active Ingredients
+=====================================  
+Column {data-width=800}
+-----------------------------------------------------------------------
+
+### The most reported hazardous ingredients in lip color products
+##### Titanium dioxide is the most reported hazardous ingredients in lop color products.
+##### Titanium dioxide is used as a colorant to make cosmetics and personal care products that are applied to the skin (including the eye area), nails, and lips white in color.  It helps to increase the opaqueness, and reduce the transparency of product formulas.
+##### There is a decrease in the use of titanium dioxide in lip color products throughout the years.
+##### One possible reason for companies not using negative tone in lip color products is that titanium dioxide could be considered as safe in most cases. 
+##### When inhaled, titanium dioxide is considered possibly carcinogenic to humans. This means that in products that contain powdered titanium dioxide like loose powders, pressed powders, eyeshadows, and blushes in which the makeup is in powder form, titanium dioxide can be inhaled.
+##### Thus, we tatinium dioxide being used as lipstick or lip gloss, they cannot be inhaled. 
+
+```{r}
+# top 4 chemicals in lip color products
+p3 = ggplot(data = lips_cat, aes(x = reorder(ChemicalName, -n), y = n, fill = ChemicalName)) + geom_bar(stat= "identity") + geom_text(aes(label=n), vjust=-0.3, size=3.5) +  ylim(0, 20000) + theme(axis.text.x = element_text(angle = 45, hjust = 1))+labs(title="Top Four (Potential) Hazard Chemical in Lip Color Products",
+        x ="Chemical Name", y = "Number of Cases") +  scale_fill_custom(palette = "mixed", guide = "none") 
+p3
+
+```
+
+
+
+```{r}
+# time series of titanium dioxide
+p4 = ggplot(data = ti_date1, aes(x = date, y = n)) +
+  geom_point(color = "#8A2BE2") + labs(title="Date of Titanium Dioxide Initial Report",
+        x ="Date", y = "Number of Cases")+  scale_x_date(date_labels = "%d/%m/%Y") + stat_smooth(
+  color = "#FC4E07", fill = "#FC4E07",
+  method = "loess")
+p4
+
+```
+
+
+-----------------------------------------------------------------------
+
+### Retinol Products
+##### Retinol is another hyped ingredients in the skincare industry. Retinol is an umbrella term for all ingredients derived from vitamin A. 
+##### Retinol boosts the amount of collagen your body makes and plumps out skin, cutting down fine lines and wrinkles. It also improves skin tone and color and reduces mottled patches.
+##### However, inhaling large amount of retinol can be harmful for the lung. Thus, retinol products are regulated by the FDA. 
+
+```{r}
+# time series of retinol
+p5 = ggplot(data = re_date1, aes(x = date, y = n)) +
+  geom_point(color = "#8A2BE2") + labs(title="Date of Retinol Initial Report",
+        x ="Date", y = "Number of Cases")+  scale_x_date(date_labels = "%d/%m/%Y") + stat_smooth(
+  color = "#FC4E07",method = "loess")
+p5
+
+```
+
+### Active Ingredients Sold Worldwide
+##### There are always more than one active ingredients in one cosmetic products. Each country has its own regulations on how active ingredients are defined as well as the number of active ingredients is allowed in cosmetics products. 
+##### Also, skincare is personal and is highly related to cultures. Let's take a look at the average number of active ingredients being sold in certain countries. 
+##### Asian countries in general, tends to have less active ingredients in the cosmetic products that European countries. 
+
+```{r}
+# lop the world map
+world <- map_data("world")
+# plot the world map
+p8 = ggplot() +
+  geom_map(
+    data = world, map = world,
+    aes(long, lat, map_id = region),
+    color = "black", fill = "lightgray", size = 0.1
+  )  + 
+  geom_point(
+    data = additive,
+    aes(longitude, latitude, color = "pink", size = avg_active_ingredient),
+    alpha = 0.7
+  ) + 
+  labs(title="Average Active Ingredients of Products Sold in Each Country", x = "Longitude", y = "Latitude")
+p8
+
+```
+
+
+-----------------------------------------------------------------------
+
+
+Conclusion and References
+=====================================  
+Column {data-width=800}
+-----------------------------------------------------------------------
+### Conclusion
+##### Potential hazardous ingredients are not necessaily bad for us, for example, retinol has anti-aging effects when used in skincare products. 
+##### However, purchasing products that are regulated by the FDA is recommended. 
+### Recommendations for further researches
+##### Network graph of the relationship between different types of chemical and types of primary category products shows that there could be some relationship between these two variables.
+##### The network graph is conducted by draw a randomly stratified sample of size 50 from the dataset.
+###### Prediction of the type hazardous chemical based on product category could be useful for average consumers for education purposes. For example, consumers could have some hints to look for potential hazardous ingredients on the product label when they are purchasing certain products.
+##### Thus, Prediction of hazardous chemical based on product type is recommended for future researches. 
+
+```{r, echo = FALSE}
+library(GGally)
+library(network)
+```
+````{r}
+# set seed
+set.seed(919)
+# get a random sample of 50
+chem_work =chemical %>% select(ChemicalId, PrimaryCategoryId) %>% drop_na() %>% sample_n(50)
+# change the type to char
+chem_work$ChemicalId <- as.character(chem_work$ChemicalId)
+chem_work$fPrimaryCategoryId <- as.character(chem_work$PrimaryCategoryId)
+```
+
+```{r}
+# build the network
+nw <- network(chem_work, directed = TRUE, matrix.type = "edgelist")
+
+```
+
+```{r}
+# draw the plot
+ggnet2(net = nw, 
+       color = "pink",
+       label = TRUE, 
+       label.size = 3,
+       arrow.size = 0.3, 
+       arrow.gap = .03)
+
+```
+
+
+### Words from the Author
+##### Skincare is selfcare. There is no shame of taking care of our bodies and our skin.
+##### Skincare is personal. Each and every individual should form their own skincare routine. 
+### References
+- https://www.webmd.com/beauty/qa/what-is-retinol-and-why-is-it-in-skin-care-products#:~:text=Retinol%20is%20added%20to%20creams,your%20skin%20dry%20and%20flaky.
+- https://www.self.com/story/what-are-actives-in-skin-care
+- https://cosmeticsinfo.org/ingredient/titanium-dioxide-0#:~:text=Titanium%20dioxide%20is%20used%20as,the%20transparency%20of%20product%20formulas.
+- https://data.chhs.ca.gov/dataset/chemicals-in-cosmetics
+
+-----------------------------------------------------------------------
